@@ -10,14 +10,14 @@ import (
 	"strings"
 
 	"github.com/codegangsta/negroni"
+	"github.com/gorilla/context"
 	"github.com/phyber/negroni-gzip/gzip"
 )
 
 // ResponseWriter wrapper to catch 404s
 type html5mode struct {
-	w       http.ResponseWriter
-	r       *http.Request
-	written bool
+	w http.ResponseWriter
+	r *http.Request
 }
 
 var h5m html5mode
@@ -41,6 +41,7 @@ func main() {
 	keyfile := flag.String("keyfile", "", "SSL key filename")
 	flag.IntVar(&port, "p", 8080, "HTTP port")
 	flag.IntVar(&portTLS, "s", 8081, "HTTPS port")
+	forceTLS := flag.Bool("forceTLS", false, "Force HTTPS")
 	stripPrefix := flag.String("stripPrefix", "", "path to strip from incoming requests")
 	flag.Parse()
 
@@ -67,10 +68,14 @@ func main() {
 		negroni.NewRecovery(),
 		negroni.NewLogger(),
 	)
-	//n.Use(negroni.HandlerFunc(redir))
+	if *forceTLS && *certfile != "" && *keyfile != "" {
+		log.Printf("Force TLS enabled\n")
+		n.Use(negroni.HandlerFunc(redir))
+	}
 	n.Use(gzip.Gzip(gzip.DefaultCompression))
 
 	if *html5mode {
+		log.Printf("HTML5 mode enabled\n")
 		n.Use(negroni.HandlerFunc(html5ModeMiddleware))
 	}
 
@@ -92,11 +97,12 @@ func html5ModeMiddleware(rw http.ResponseWriter, r *http.Request, next http.Hand
 	h5m.w = rw
 	h5m.r = r
 	next(&h5m, r)
+	//context.Clear(r)
 }
 
 func (sr *html5mode) Header() http.Header { return sr.w.Header() }
 func (sr *html5mode) Write(d []byte) (int, error) {
-	if sr.written {
+	if _, ok := context.GetOk(sr.r, "html5modeWritten"); ok {
 		return 0, nil
 	} else {
 		return sr.w.Write(d)
@@ -110,7 +116,7 @@ func (sr *html5mode) WriteHeader(status int) {
 			// Required for Angular.js html5mode
 			sr.w.Header().Del("Content-Type")
 			http.ServeFile(sr.w, sr.r, webRoot+"/index.html")
-			sr.written = true
+			context.Set(sr.r, "html5modeWritten", true)
 			return
 		}
 	}
