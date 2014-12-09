@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"log"
 	"net/http"
@@ -40,8 +41,8 @@ func main() {
 	html5mode := flag.Bool("html5mode", false, "On HTTP 404, serve index.html. Used with AngularJS html5mode.")
 	flag.StringVar(&webRoot, "d", "public", "root directory of website")
 	flag.StringVar(&logFile, "l", "", "log to a file. Defaults to stdout")
-	certfile := flag.String("certfile", "", "SSL certificate filename")
-	keyfile := flag.String("keyfile", "", "SSL key filename")
+	certfile := flag.String("certFile", "", "SSL certificate filename")
+	keyfile := flag.String("keyFile", "", "SSL key filename")
 	flag.IntVar(&port, "p", 8080, "HTTP port")
 	flag.IntVar(&portTLS, "s", 8081, "HTTPS port")
 	forceTLS := flag.Bool("forceTLS", false, "Force HTTPS")
@@ -102,7 +103,10 @@ func main() {
 	if *certfile != "" && *keyfile != "" {
 		go func() {
 			log.Printf("HTTPS listening on port %d\n", portTLS)
-			log.Fatal(http.ListenAndServeTLS(":"+strconv.Itoa(portTLS), *certfile, *keyfile, n))
+			// only support TLS (mitigate against POODLE attack)
+			config := &tls.Config{MinVersion: tls.VersionTLS10}
+			server := &http.Server{Addr: ":" + strconv.Itoa(portTLS), Handler: n, TLSConfig: config}
+			log.Fatal(server.ListenAndServeTLS(*certfile, *keyfile))
 		}()
 	}
 
