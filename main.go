@@ -34,9 +34,12 @@ func redir(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 func main() {
 	var err error
 	var port, portTLS int
+	var logFile string
+	var logger *negroni.Logger
 
 	html5mode := flag.Bool("html5mode", false, "On HTTP 404, serve index.html. Used with AngularJS html5mode.")
 	flag.StringVar(&webRoot, "d", "public", "root directory of website")
+	flag.StringVar(&logFile, "l", "", "log to a file. Defaults to stdout")
 	certfile := flag.String("certfile", "", "SSL certificate filename")
 	keyfile := flag.String("keyfile", "", "SSL key filename")
 	flag.IntVar(&port, "p", 8080, "HTTP port")
@@ -64,10 +67,25 @@ func main() {
 
 	}
 
+	if logFile != "" {
+		f, err := os.OpenFile(logFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		if err != nil {
+			log.Fatalf("error opening logfile '%s', %s\n", logFile, err)
+		}
+		log.Printf("writing to logfile '%s'\n", logFile)
+		logger = &negroni.Logger{log.New(f, "[negroni] ", 0)}
+	} else {
+		logger = negroni.NewLogger()
+	}
+
 	n := negroni.New(
 		negroni.NewRecovery(),
-		negroni.NewLogger(),
+		logger,
 	)
+	if logFile != "" {
+
+	}
+
 	if *forceTLS && *certfile != "" && *keyfile != "" {
 		log.Printf("Force TLS enabled\n")
 		n.Use(negroni.HandlerFunc(redir))
@@ -92,7 +110,7 @@ func main() {
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), n))
 }
 
-// This should come before static file-serving middleware
+// This should come before any static file-serving middleware
 func html5ModeMiddleware(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	h5m.w = rw
 	h5m.r = r
