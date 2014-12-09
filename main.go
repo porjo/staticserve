@@ -103,8 +103,18 @@ func main() {
 	if *certfile != "" && *keyfile != "" {
 		go func() {
 			log.Printf("HTTPS listening on port %d\n", portTLS)
+			config := &tls.Config{}
 			// only support TLS (mitigate against POODLE attack)
-			config := &tls.Config{MinVersion: tls.VersionTLS10}
+			config.MinVersion = tls.VersionTLS10
+			//Use only modern ciphers
+			config.CipherSuites = []uint16{tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256}
 			server := &http.Server{Addr: ":" + strconv.Itoa(portTLS), Handler: n, TLSConfig: config}
 			log.Fatal(server.ListenAndServeTLS(*certfile, *keyfile))
 		}()
