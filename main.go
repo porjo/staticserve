@@ -35,12 +35,14 @@ func redir(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 func main() {
 	var err error
 	var port, portTLS int
-	var logFile string
+	var logFile, errLogFile string
 	var logger *negroni.Logger
+	var errLogger *log.Logger
 
 	html5mode := flag.Bool("html5mode", false, "On HTTP 404, serve index.html. Used with AngularJS html5mode.")
 	flag.StringVar(&webRoot, "d", "public", "root directory of website")
-	flag.StringVar(&logFile, "l", "", "log to a file. Defaults to stdout")
+	flag.StringVar(&logFile, "l", "", "log requests to a file. Defaults to stdout")
+	flag.StringVar(&errLogFile, "e", "", "log errors to a file. Defaults to stdout")
 	certfile := flag.String("certFile", "", "SSL certificate filename")
 	keyfile := flag.String("keyFile", "", "SSL key filename")
 	flag.IntVar(&port, "p", 8080, "HTTP port")
@@ -74,9 +76,18 @@ func main() {
 			log.Fatalf("error opening logfile '%s', %s\n", logFile, err)
 		}
 		log.Printf("writing to logfile '%s'\n", logFile)
-		logger = &negroni.Logger{log.New(f, "[negroni] ", 0)}
+		logger = &negroni.Logger{log.New(f, "", log.LstdFlags)}
 	} else {
 		logger = negroni.NewLogger()
+	}
+
+	if errLogFile != "" {
+		f, err := os.OpenFile(errLogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		if err != nil {
+			log.Fatalf("error opening logfile '%s', %s\n", errLogFile, err)
+		}
+		log.Printf("writing errors to logfile '%s'\n", errLogFile)
+		errLogger = log.New(f, "", log.LstdFlags)
 	}
 
 	n := negroni.New(
@@ -116,12 +127,19 @@ func main() {
 				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256}
 			server := &http.Server{Addr: ":" + strconv.Itoa(portTLS), Handler: n, TLSConfig: config}
+			if errLogger != nil {
+				server.ErrorLog = errLogger
+			}
 			log.Fatal(server.ListenAndServeTLS(*certfile, *keyfile))
 		}()
 	}
 
 	log.Printf("HTTP listening on port %d\n", port)
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), n))
+	server := &http.Server{Addr: ":" + strconv.Itoa(port), Handler: n}
+	if errLogger != nil {
+		server.ErrorLog = errLogger
+	}
+	log.Fatal(server.ListenAndServe())
 }
 
 // This should come before any static file-serving middleware
