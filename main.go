@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bradfitz/http2"
 	"github.com/codegangsta/negroni"
 	"github.com/gorilla/context"
 	"github.com/phyber/negroni-gzip/gzip"
@@ -17,12 +18,13 @@ import (
 
 // ResponseWriter wrapper to catch 404s
 type html5mode struct {
-	w http.ResponseWriter
-	r *http.Request
+	w            http.ResponseWriter
+	r            *http.Request
+	NotFoundPath string
 }
 
-var h5m html5mode
 var webRoot string
+var h5m *html5mode
 
 func redir(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	if r.TLS == nil {
@@ -39,12 +41,16 @@ func main() {
 	var logger *negroni.Logger
 	var errLogger *log.Logger
 
+	h5m = &html5mode{}
+
 	html5mode := flag.Bool("html5mode", false, "On HTTP 404, serve index.html. Used with AngularJS html5mode.")
+	flag.StringVar(&h5m.NotFoundPath, "404Path", "/404", "If request matches this path and file exists, then contents will be served with 404 status. Used with AngularJS html5mode.")
 	flag.StringVar(&webRoot, "d", "public", "root directory of website")
 	flag.StringVar(&logFile, "l", "", "log requests to a file. Defaults to stdout")
 	flag.StringVar(&errLogFile, "e", "", "log errors to a file. Defaults to stdout")
 	certfile := flag.String("certFile", "", "SSL certificate filename")
 	keyfile := flag.String("keyFile", "", "SSL key filename")
+	useGzip := flag.Bool("gzip", true, "gzip compress content")
 	flag.IntVar(&port, "p", 8080, "HTTP port")
 	flag.IntVar(&portTLS, "s", 8081, "HTTPS port")
 	forceTLS := flag.Bool("forceTLS", false, "Force HTTPS")
@@ -102,7 +108,9 @@ func main() {
 		log.Printf("Force TLS enabled\n")
 		n.Use(negroni.HandlerFunc(redir))
 	}
-	n.Use(gzip.Gzip(gzip.DefaultCompression))
+	if *useGzip {
+		n.Use(gzip.Gzip(gzip.DefaultCompression))
+	}
 
 	if *html5mode {
 		log.Printf("HTML5 mode enabled\n")
@@ -130,8 +138,11 @@ func main() {
 			if errLogger != nil {
 				server.ErrorLog = errLogger
 			}
+			http2.ConfigureServer(server, nil)
 			log.Fatal(server.ListenAndServeTLS(*certfile, *keyfile))
 		}()
+	} else {
+		log.Printf("HTTPS not started. Please supply SSL certificate and key")
 	}
 
 	log.Printf("HTTP listening on port %d\n", port)
@@ -139,6 +150,10 @@ func main() {
 	if errLogger != nil {
 		server.ErrorLog = errLogger
 	}
+
+	// Most browsers don't talk HTTP/2 on non-SSL, so leave this off for now
+	//http2.ConfigureServer(server, nil)
+
 	log.Fatal(server.ListenAndServe())
 }
 
@@ -146,8 +161,7 @@ func main() {
 func html5ModeMiddleware(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	h5m.w = rw
 	h5m.r = r
-	next(&h5m, r)
-	//context.Clear(r)
+	next(h5m, r)
 }
 
 func (sr *html5mode) Header() http.Header { return sr.w.Header() }
@@ -160,10 +174,14 @@ func (sr *html5mode) Write(d []byte) (int, error) {
 }
 
 func (sr *html5mode) WriteHeader(status int) {
-	if status == 404 {
+	if status == 200 && sr.r.URL.Path == sr.NotFoundPath {
+		// Serve 'not found' path, using hard 404 error
+		sr.w.WriteHeader(404)
+		return
+	} else if status == 404 {
+		// Serve contents of index.html if request isn't for a file
+		// Required for Angular.js html5mode
 		if path.Ext(sr.r.URL.Path) == "" {
-			// Server contents of index.html if request isn't for a file
-			// Required for Angular.js html5mode
 			sr.w.Header().Del("Content-Type")
 			http.ServeFile(sr.w, sr.r, webRoot+"/index.html")
 			context.Set(sr.r, "html5modeWritten", true)
