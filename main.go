@@ -18,13 +18,12 @@ import (
 
 // ResponseWriter wrapper to catch 404s
 type html5mode struct {
-	w            http.ResponseWriter
-	r            *http.Request
-	NotFoundPath string
+	w http.ResponseWriter
+	r *http.Request
 }
 
 var webRoot string
-var h5m *html5mode
+var notFoundPath string
 
 func redir(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	if r.TLS == nil {
@@ -41,10 +40,8 @@ func main() {
 	var logger *negroni.Logger
 	var errLogger *log.Logger
 
-	h5m = &html5mode{}
-
 	html5mode := flag.Bool("html5mode", false, "On HTTP 404, serve index.html. Used with AngularJS html5mode.")
-	flag.StringVar(&h5m.NotFoundPath, "404Path", "/404", "If request matches this path and file exists, then contents will be served with 404 status. Used with AngularJS html5mode.")
+	flag.StringVar(&notFoundPath, "404Path", "/404", "If request matches this path and file exists, then contents will be served with 404 status. Used with AngularJS html5mode.")
 	flag.StringVar(&webRoot, "d", "public", "root directory of website")
 	flag.StringVar(&logFile, "l", "", "log requests to a file. Defaults to stdout")
 	flag.StringVar(&errLogFile, "e", "", "log errors to a file. Defaults to stdout")
@@ -82,7 +79,8 @@ func main() {
 			log.Fatalf("error opening logfile '%s', %s\n", logFile, err)
 		}
 		log.Printf("writing to logfile '%s'\n", logFile)
-		logger = &negroni.Logger{log.New(f, "", log.LstdFlags)}
+		logger = negroni.NewLogger()
+		logger.Logger = log.New(f, "", log.LstdFlags)
 	} else {
 		logger = negroni.NewLogger()
 	}
@@ -100,15 +98,13 @@ func main() {
 		negroni.NewRecovery(),
 		logger,
 	)
-	if logFile != "" {
-
-	}
 
 	if *forceTLS && *certfile != "" && *keyfile != "" {
 		log.Printf("Force TLS enabled\n")
 		n.Use(negroni.HandlerFunc(redir))
 	}
 	if *useGzip {
+		log.Printf("Gzip enabled\n")
 		n.Use(gzip.Gzip(gzip.DefaultCompression))
 	}
 
@@ -159,13 +155,14 @@ func main() {
 
 // This should come before any static file-serving middleware
 func html5ModeMiddleware(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	h5m := html5mode{}
 	h5m.w = rw
 	h5m.r = r
 	next(h5m, r)
 }
 
-func (sr *html5mode) Header() http.Header { return sr.w.Header() }
-func (sr *html5mode) Write(d []byte) (int, error) {
+func (sr html5mode) Header() http.Header { return sr.w.Header() }
+func (sr html5mode) Write(d []byte) (int, error) {
 	if _, ok := context.GetOk(sr.r, "html5modeWritten"); ok {
 		return 0, nil
 	} else {
@@ -173,8 +170,8 @@ func (sr *html5mode) Write(d []byte) (int, error) {
 	}
 }
 
-func (sr *html5mode) WriteHeader(status int) {
-	if status == 200 && sr.r.URL.Path == sr.NotFoundPath {
+func (sr html5mode) WriteHeader(status int) {
+	if status == 200 && sr.r.URL.Path == notFoundPath {
 		// Serve 'not found' path, using hard 404 error
 		sr.w.WriteHeader(404)
 		return
