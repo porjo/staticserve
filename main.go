@@ -41,6 +41,7 @@ func main() {
 	var errLogger *log.Logger
 
 	html5mode := flag.Bool("html5mode", false, "On HTTP 404, serve index.html. Used with AngularJS html5mode.")
+	nocacheIndex := flag.Bool("nocacheIndex", false, "Include HTTP 'Cache-Control' headers that request index.html not to be cached.")
 	flag.StringVar(&notFoundPath, "404Path", "/404", "If request matches this path and file exists, then contents will be served with 404 status. Used with AngularJS html5mode.")
 	flag.StringVar(&webRoot, "d", "public", "root directory of website")
 	flag.StringVar(&logFile, "l", "", "log requests to a file. Defaults to stdout")
@@ -113,6 +114,11 @@ func main() {
 		n.Use(negroni.HandlerFunc(html5ModeMiddleware))
 	}
 
+	if *nocacheIndex {
+		log.Printf("Including Cache-Control for index.html\n")
+		n.Use(negroni.HandlerFunc(nocacheIndexMiddleware))
+	}
+
 	n.UseHandler(mux)
 
 	if *certfile != "" && *keyfile != "" {
@@ -151,6 +157,14 @@ func main() {
 	//http2.ConfigureServer(server, nil)
 
 	log.Fatal(server.ListenAndServe())
+}
+
+// This should come before any static file-serving middleware
+func nocacheIndexMiddleware(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	if path.Base(r.URL.Path) == "/" {
+		rw.Header().Set("Cache-Control", "no-cache")
+	}
+	next(rw, r)
 }
 
 // This should come before any static file-serving middleware
