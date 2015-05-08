@@ -14,6 +14,7 @@ import (
 	"github.com/codegangsta/negroni"
 	"github.com/gorilla/context"
 	"github.com/phyber/negroni-gzip/gzip"
+	"github.com/tampajohn/prerender"
 )
 
 // ResponseWriter wrapper to catch 404s
@@ -42,6 +43,7 @@ func main() {
 
 	html5mode := flag.Bool("html5mode", false, "On HTTP 404, serve index.html. Used with AngularJS html5mode.")
 	nocacheIndex := flag.Bool("nocacheIndex", false, "Include HTTP 'Cache-Control' headers that request index.html not to be cached.")
+	usePrerender := flag.Bool("prerender", false, "Enable prerender.io JS rendering service.")
 	flag.StringVar(&notFoundPath, "404Path", "/404", "If request matches this path and file exists, then contents will be served with 404 status. Used with AngularJS html5mode.")
 	flag.StringVar(&webRoot, "d", "public", "root directory of website")
 	flag.StringVar(&logFile, "l", "", "log requests to a file. Defaults to stdout")
@@ -104,6 +106,14 @@ func main() {
 		log.Printf("Force TLS enabled\n")
 		n.Use(negroni.HandlerFunc(redir))
 	}
+
+	if *usePrerender {
+		log.Printf("Enabling prerender.io service\n")
+		//prOpt := prerender.NewOptions()
+		//prOpt.WhiteList = append(prOpt.WhiteList, *regexp.MustCompile(`.*`))
+		n.Use(prerender.NewOptions().NewPrerender())
+	}
+
 	if *useGzip {
 		log.Printf("Gzip enabled\n")
 		n.Use(gzip.Gzip(gzip.DefaultCompression))
