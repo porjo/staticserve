@@ -14,7 +14,8 @@ import (
 	"github.com/codegangsta/negroni"
 	"github.com/gorilla/context"
 	"github.com/phyber/negroni-gzip/gzip"
-	"github.com/tampajohn/prerender"
+	//"github.com/tampajohn/prerender"
+	"github.com/porjo/goprerender"
 )
 
 // ResponseWriter wrapper to catch 404s
